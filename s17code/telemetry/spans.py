@@ -61,6 +61,10 @@ GEN_AI_OUTPUT_MESSAGES = "gen_ai.output.messages"
 COST = "s15.cost"
 CURRENCY = "s15.currency"
 
+#: A provider's own reasoning content has no blessed GenAI attribute either.
+#: Same PII gate as the input/output messages above: opt-in only.
+REASONING_TEXT = "s15.reasoning_text"
+
 SPAN_KIND = "s15.span.kind"
 RUN_ID = "s15.run.id"
 PRINCIPAL = "s15.principal"
@@ -400,11 +404,13 @@ def build_span_tree(
                 if call.get("cache_read_tokens"):
                     attributes["gen_ai.usage.cache_read_input_tokens"] = int(call["cache_read_tokens"])
                 if capture:
-                    # Opt-in only: prompts and completions are PII.
+                    # Opt-in only: prompts, completions and reasoning are PII.
                     if call.get("prompt"):
                         attributes[GEN_AI_INPUT_MESSAGES] = str(call["prompt"])
                     if call.get("completion"):
                         attributes[GEN_AI_OUTPUT_MESSAGES] = str(call["completion"])
+                    if call.get("reasoning_text"):
+                        attributes[REASONING_TEXT] = str(call["reasoning_text"])
                 span.add(
                     SpanNode(
                         name=f"chat {call.get('model') or 'model'}",

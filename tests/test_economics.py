@@ -404,6 +404,33 @@ async def test_the_node_result_carries_the_meter_into_the_journal(ladder, pricin
     assert fields["metered_calls"][0]["cost"] > 0
 
 
+async def test_reasoning_text_reaches_both_the_result_and_the_metered_record(ladder, pricing):
+    class ReasoningTransport:
+        async def chat(self, *, prompt, system, request=None):
+            return {"text": "ok", "provider": "p_1", "model": "mid-1",
+                    "input_tokens": 1000, "output_tokens": 400,
+                    "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0, "latency_ms": 5,
+                    "reasoning_text": "weighing the options..."}
+
+    budget = RunBudget(total=1.0)
+    transport = MeteredTransport(ReasoningTransport())
+    gateway = BudgetedGateway(transport, budget=budget, policy=policy(ladder, pricing),
+                              pricing=pricing, ladder=ladder)
+    with call_site("a", "scout") as site:
+        result = await gateway.complete("p", "s")
+    assert result["reasoning_text"] == "weighing the options..."
+    assert site.calls[0]["reasoning_text"] == "weighing the options..."
+
+
+async def test_reasoning_text_is_none_in_the_record_when_the_transport_has_none(ladder, pricing):
+    budget = RunBudget(total=1.0)
+    gateway, _ = controller(ladder, pricing, budget)
+    with call_site("a", "scout") as site:
+        result = await gateway.complete("p", "s")
+    assert result["reasoning_text"] is None
+    assert site.calls[0]["reasoning_text"] is None
+
+
 # --------------------------------------------------------------------------- #
 # config.py
 # --------------------------------------------------------------------------- #

@@ -74,6 +74,48 @@ async def test_irrelevant_and_unmatched_events_do_not_start_agents(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_the_gates_own_reasoning_is_captured_on_a_relevant_decision(tmp_path):
+    store, runtime = EventStore(tmp_path), RecordingRuntime()
+    store.put_subscription(subscription())
+    engine = AutonomousEventEngine(store, runtime)
+
+    async def relevant_with_reasoning(_prompt, _system):
+        return {"text": '{"relevant":true,"reason":"threshold is material",'
+                        '"goal":"Investigate checkout degradation and write a report."}',
+                "reasoning_text": "weighing severity against noise..."}
+
+    result = await engine.process(event(), llm=relevant_with_reasoning)
+    assert result["decisions"][0]["reasoning_text"] == "weighing severity against noise..."
+
+
+@pytest.mark.asyncio
+async def test_the_gates_own_reasoning_is_captured_on_an_irrelevant_decision_too(tmp_path):
+    store, runtime = EventStore(tmp_path), RecordingRuntime()
+    store.put_subscription(subscription())
+    engine = AutonomousEventEngine(store, runtime)
+
+    async def irrelevant_with_reasoning(_prompt, _system):
+        return {"text": '{"relevant":false,"reason":"healthy recovery","goal":""}',
+                "reasoning_text": "concluded this is routine noise..."}
+
+    result = await engine.process(event(), llm=irrelevant_with_reasoning)
+    assert result["decisions"][0]["reasoning_text"] == "concluded this is routine noise..."
+
+
+@pytest.mark.asyncio
+async def test_reasoning_text_is_none_on_the_decision_when_the_gate_sends_none(tmp_path):
+    store, runtime = EventStore(tmp_path), RecordingRuntime()
+    store.put_subscription(subscription())
+    engine = AutonomousEventEngine(store, runtime)
+
+    async def relevant(_prompt, _system):
+        return {"text": '{"relevant":true,"reason":"threshold is material","goal":"Investigate."}'}
+
+    result = await engine.process(event(), llm=relevant)
+    assert result["decisions"][0]["reasoning_text"] is None
+
+
+@pytest.mark.asyncio
 async def test_one_event_can_launch_independent_subscriptions_concurrently(tmp_path):
     store, runtime = EventStore(tmp_path), RecordingRuntime()
     store.put_subscription(subscription(id="security"))

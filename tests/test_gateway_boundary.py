@@ -83,6 +83,42 @@ async def test_gateway_can_fall_back_without_exposing_credentials(monkeypatch):
     assert result["text"] == "fallback"
 
 
+@pytest.mark.asyncio
+async def test_chat_passes_through_the_gateways_reasoning_text(monkeypatch):
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"text": "done", "provider": "gemini_2", "model": "gemini",
+                                         "reasoning_text": "weighing the evidence..."})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await GatewayClient("http://127.0.0.1:8111", client=http).chat(
+            prompt="goal", system="system"
+        )
+    assert result["reasoning_text"] == "weighing the evidence..."
+
+
+@pytest.mark.asyncio
+async def test_chat_reasoning_text_is_none_when_the_gateway_omits_it(monkeypatch):
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"text": "done", "provider": "gemini_2", "model": "gemini"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await GatewayClient("http://127.0.0.1:8111", client=http).chat(
+            prompt="goal", system="system"
+        )
+    assert result["reasoning_text"] is None
+
+
+@pytest.mark.asyncio
+async def test_complete_also_passes_through_reasoning_text(monkeypatch):
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"text": "done", "provider": "gemini_2", "model": "gemini",
+                                         "reasoning_text": "weighing the evidence..."})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await GatewayClient("http://127.0.0.1:8111", client=http).complete("goal", "system")
+    assert result["reasoning_text"] == "weighing the evidence..."
+
+
 def test_s17code_does_not_reimplement_gateway_routes(app_client):
     assert app_client.post("/v1/chat", json={}).status_code == 404
     assert app_client.get("/v1/providers").status_code == 404

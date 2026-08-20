@@ -94,6 +94,7 @@ class GatewayClient:
             "cache_creation_input_tokens": body.get("cache_creation_input_tokens") or 0,
             "latency_ms": body.get("latency_ms"),
             "stop_reason": body.get("stop_reason"),
+            "reasoning_text": body.get("reasoning_text"),
         }
 
     async def complete(
@@ -110,6 +111,7 @@ class GatewayClient:
         return {
             "text": result["text"], "provider": result["provider"], "model": result["model"],
             "input_tokens": result["input_tokens"], "output_tokens": result["output_tokens"],
+            "reasoning_text": result.get("reasoning_text"),
         }
 
     async def health(self) -> dict[str, Any]:

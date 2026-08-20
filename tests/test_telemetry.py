@@ -19,6 +19,7 @@ from s17code.telemetry.spans import (
     GEN_AI_OUTPUT_TOKENS,
     GEN_AI_PROVIDER,
     GEN_AI_REQUEST_MODEL,
+    REASONING_TEXT,
     SPAN_KIND,
     build_tracer_provider,
 )
@@ -203,6 +204,22 @@ def test_the_env_switch_also_opts_in(journal, monkeypatch):
     monkeypatch.setenv("S17_OTEL_CAPTURE_CONTENT", "1")
     journal["events"][3]["payload"]["metered_calls"][0]["prompt"] = "x"
     assert export_run(journal).capture_content is True
+
+
+def test_reasoning_text_is_off_by_default_too(journal, monkeypatch):
+    monkeypatch.delenv("S17_OTEL_CAPTURE_CONTENT", raising=False)
+    journal["events"][3]["payload"]["metered_calls"][0]["reasoning_text"] = "a private thought"
+    export = export_run(journal)
+    for span in export.spans:
+        assert REASONING_TEXT not in dict(span.attributes)
+    assert "a private thought" not in str(export.as_dict())
+
+
+def test_reasoning_text_is_captured_once_opted_in(journal):
+    journal["events"][3]["payload"]["metered_calls"][0]["reasoning_text"] = "a private thought"
+    export = export_run(journal, capture_content=True)
+    captured = [dict(s.attributes) for s in export.spans if REASONING_TEXT in dict(s.attributes)]
+    assert captured and captured[0][REASONING_TEXT] == "a private thought"
 
 
 # --------------------------------------------------------------------------- #

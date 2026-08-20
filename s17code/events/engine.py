@@ -121,6 +121,7 @@ class AutonomousEventEngine:
                     "subscription_id": subscription.id, "relevant": relevant,
                     "reason": reason[:2_000], "goal": goal[:20_000] if relevant else "",
                     "triage_cost_usd": triage_cost,
+                    "reasoning_text": reply.get("reasoning_text"),
                     "decided_at": now.isoformat(),
                 }
                 if relevant:

@@ -188,6 +188,7 @@ class BudgetedGateway:
             **charge.as_dict(),
             "requested_model": decision.tier.request.get("model"),
             "reasoning": decision.tier.request.get("reasoning"),
+            "reasoning_text": response.get("reasoning_text"),
             "budget_remaining": self.budget.remaining,
             "budget_pressure": self.budget.pressure,
         }
@@ -201,6 +202,7 @@ class BudgetedGateway:
             "input_tokens": charge.input_tokens,
             "output_tokens": charge.output_tokens,
             "budget_decision": decision.action,
+            "reasoning_text": response.get("reasoning_text"),
         }
 
     def as_text_llm(self, **request: Any) -> Callable[[str, str], Awaitable[dict[str, Any]]]:
