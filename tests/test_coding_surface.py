@@ -52,6 +52,29 @@ def test_ordinary_source_is_editable(repo) -> None:
     assert is_protected("calc.py") is None
 
 
+@pytest.mark.parametrize("path,real_path", [
+    ("a/../pyproject.toml", "pyproject.toml"),
+    ("a/../.github/workflows/ci.yml", ".github/workflows/ci.yml"),
+    ("src/../setup.cfg", "setup.cfg"),
+])
+def test_a_dotdot_path_cannot_walk_past_the_guard(repo, path, real_path) -> None:
+    """The guard checks the string the model typed. workspace.resolve() collapses
+    ".." before opening the file. If those two disagree, the guard is checking a
+    path that is never the one actually written to.
+
+    (conftest.py is deliberately not one of these cases: it is also matched by
+    the "**/conftest.py" twin pattern, so a ".."-mangled path ending in
+    "/conftest.py" is caught by accident regardless of this bug, and would not
+    be honest evidence for it.)"""
+    target = repo.root / real_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("protected content")
+    ledger = EditLedger()
+    ledger.record_read(path)
+    with pytest.raises(GuardError, match="protected pattern"):
+        apply_edit(repo, ledger, path, old_string="protected", new_string="pwned")
+
+
 # --------------------------------------------------------------- the two preconditions
 
 def test_editing_a_file_this_run_has_not_read_is_refused(repo) -> None:

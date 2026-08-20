@@ -143,7 +143,13 @@ def copy_within_workspace(workspace, ledger, source: str, destination: str,
     from read-before-edit: there is nothing to have read. It stays inside the
     workspace and it still refuses to clobber, because silently replacing a file
     is the thing read-before-edit exists to prevent.
+
+    It is not exempt from the guard. apply_edit and create_file both refuse a
+    protected destination; a copy that skipped the same check would let the
+    judge be replaced by writing to a scratch file and copying it over the
+    test suite, in two ordinary calls neither of which looks like an edit.
     """
+    guard_path(destination, action="copy")
     src = workspace.resolve(source)
     dst = workspace.resolve(destination)
     if not src.is_file():

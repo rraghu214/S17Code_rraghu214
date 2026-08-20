@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from s17code.coding.edit import EditError, EditLedger, copy_within_workspace
+from s17code.coding.guard import GuardError
 from s17code.coding.workspace import Workspace
 
 
@@ -61,3 +62,15 @@ def test_neither_end_may_leave_the_workspace(ws, escape: str) -> None:
         copy_within_workspace(workspace, ledger, "base.html", escape)
     with pytest.raises(Exception):
         copy_within_workspace(workspace, ledger, escape, "deck.html")
+
+
+def test_copy_cannot_be_used_to_overwrite_the_judge(ws) -> None:
+    """apply_edit and create_file both check guard_path before touching a file.
+    copy_within_workspace is a third door into the same room, and it never checked
+    the lock: create_file a scratch file, then copy it over the test suite."""
+    workspace, ledger = ws
+    (workspace.root / "tests").mkdir()
+    (workspace.root / "tests" / "test_calc.py").write_text("def test_real():\n    assert False\n")
+    with pytest.raises(GuardError, match="protected pattern"):
+        copy_within_workspace(workspace, ledger, "base.html", "tests/test_calc.py",
+                              overwrite=True)

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import posixpath
 from pathlib import Path
 
 # Anything matching these is the judge, not the work.
@@ -49,6 +50,13 @@ def is_protected(relative: str, patterns: tuple[str, ...] | None = None) -> str 
     while rel.startswith("./"):
         rel = rel[2:]
     rel = rel.lstrip("/")
+    # Collapse ".." the same way workspace.resolve() will before the file is
+    # opened. Without this, "a/../pyproject.toml" is matched here as some path
+    # under "a", while the workspace resolves it straight to pyproject.toml --
+    # the guard and the file actually touched disagree, and the guard loses.
+    if rel:
+        rel = posixpath.normpath(rel)
+        rel = "" if rel == "." else rel
     for pattern in patterns or protected_patterns():
         # fnmatch does not treat "/" specially, so "**/x" needs a plain tail check too.
         if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch("/" + rel, "/" + pattern):
