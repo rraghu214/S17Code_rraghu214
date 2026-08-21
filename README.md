@@ -1,3 +1,191 @@
+# Model Arena
+
+Fire one coding-fix prompt at three separately-configured instances of the *same* coding
+agent — one pinned to Groq, one to Gemini, one to NVIDIA — and watch them race, live, in a
+browser: each one reads the code, edits it, runs the real test suite as the judge, and either
+converges on a green test, gets refused for touching a protected file, thrashes without
+converging, or genuinely errors out on a provider failure. No mocked failure, no scripted
+happy path — the run is real, and so is the possibility that it doesn't work.
+
+## The problem
+
+Which model to trust for *your* coding task, on *your* codebase, is a live, unresolved
+question — 2026's own SWE-bench commentary notes the same model can swing 15-20 points just
+from a harness change. Copilot Arena does pairwise human-voted comparison of single-turn code
+completions; SWE-bench is the industry-standard way to compare agentic coding across models,
+but it's a static leaderboard on someone else's fixed task set. Neither does live,
+test-verified, run-it-on-your-own-task comparison. Model Arena is a small, honest answer to
+that specific gap — a demo artifact proving the idea, not a claim to have solved model
+selection in general.
+
+## Demo
+
+**[YouTube link — fill in after recording]**
+
+## Architecture
+
+```
+                    Browser (you)
+                    http://127.0.0.1:8090
+                         │
+                         │  (the ONLY origin the browser ever talks to —
+                         │   no CORS, no lane port ever exposed, no token
+                         │   ever reaches client-side JS)
+                         ▼
+                 arena/server.py  (holds S17_CONTROL_TOKEN)
+              ┌──────────┼──────────┐
+      POST /v1/agent/runs, one bearer token per lane
+              ▼          ▼          ▼
+        S17Code     S17Code     S17Code       ← the exact same codebase,
+        lane: groq  lane: gemini lane: nvidia   launched 3× with different
+        :8113       :8114        :8115          env vars. No forking.
+        worktree A  worktree B   worktree C    ← 3 git worktrees off one
+              └──────────┼──────────┘            seeded-bug repo, so 3
+                         ▼                        agents edit independently
+              glc_v5 gateway :8111                without racing on files.
+              holds every provider key;
+              S17Code holds none
+```
+
+## Prerequisites
+
+- Python 3.13, `uv`
+- A running `glc_v5` gateway (`uv run glc serve`, port 8111) with at least one of
+  Groq/Gemini/NVIDIA configured
+- Windows or POSIX
+
+## Setup
+
+```bash
+git clone <this repo> S17Code && cd S17Code
+git checkout part1-model-arena
+uv sync
+
+# A small seeded-bug workspace, sibling to this repo, cloned/worktreed 3× —
+# one per lane, so each agent edits its own isolated checkout.
+cd ..
+git clone <arena-target repo> arena-target && cd arena-target
+git worktree add -b lane/groq   ../arena-worktrees/groq   main
+git worktree add -b lane/gemini ../arena-worktrees/gemini main
+git worktree add -b lane/nvidia ../arena-worktrees/nvidia main
+cd ../S17Code
+
+# Generate one shared token every lane + the backend must agree on:
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Copy each arena/env/*.env.example -> *.env (same basename, drop .example),
+# fill in the token above and your own absolute paths.
+```
+
+## Configuration
+
+Every lane needs its own `.env` file (see `arena/env/*.env.example`) — one plain `.env` at the
+repo root can't hold three different configs, since `s17code/main.py` always loads exactly
+`<repo root>/.env`. `uv run --env-file <path>` is what lets each lane point at its own file
+instead.
+
+| Var | Meaning |
+|---|---|
+| `S17_PORT` | this lane's HTTP port (8113/8114/8115) |
+| `S17_GATEWAY_PROVIDER` | which provider this lane is pinned to |
+| `S17_GATEWAY_MODEL` | optional — pin a specific model too, if the provider's own default has gone stale (ours had; see Design notes) |
+| `S17_WORKSPACE` | this lane's own git worktree |
+| `S17_DATA_DIR` / `S17_SANDBOX_ROOT` | must be unique per lane — 3 concurrent processes sharing one would stomp on each other |
+| `S17_A2A_GRPC_ENABLED=0` | Model Arena doesn't use A2A; avoids a real port collision otherwise (gemini's HTTP port and A2A's default port are both 8114) |
+| `S17_CONTROL_TOKEN` | the one shared value across all 4 processes |
+| `GLC_BASE_URL` | `http://127.0.0.1:8111`, same for all three lanes |
+
+## Run
+
+Four terminals, from the `S17Code` repo root in each:
+
+```bash
+uv run --env-file arena/env/groq.env s17code serve
+uv run --env-file arena/env/gemini.env s17code serve
+uv run --env-file arena/env/nvidia.env s17code serve
+uv run --env-file arena/env/backend.env python -m arena.server
+```
+
+Open `http://127.0.0.1:8090`. Between takes, click **Reset workspaces** (or
+`uv run python arena/reset_workspaces.py`) to restore all three worktrees to the seeded-bug
+state — no shell access needed mid-recording.
+
+## Example
+
+Prompt:
+> Fix mathkit/stats.py so average([]) raises a ValueError instead of ZeroDivisionError. Make
+> tests/test_stats.py pass without editing it.
+
+`mathkit/stats.py` on a clean checkout:
+```python
+def average(values):
+    return sum(values) / len(values)
+```
+`average([])` divides by zero — an accidental `ZeroDivisionError`, not the deliberate
+`ValueError` the test suite expects. A lane that fixes it correctly adds an empty-input guard
+before the division; a lane that can't converge shows up honestly as `thrashing` or `errored`,
+not a silently-passing green badge.
+
+A second seeded bug, `mathkit/dedupe.py`, gives more room for lanes to diverge on *how* they
+fix it, not just whether: `list(set(items))` removes duplicates but Python sets carry no
+ordering guarantee, silently breaking the function's own promise to preserve first-seen order.
+
+To see a refusal instead: point a prompt at editing `tests/test_stats.py` directly (or any
+path under `S17_PROTECTED_PATHS`'s default set — `tests/**`, `pyproject.toml`, `.github/**`,
+etc.) — the guard refuses before the edit ever reaches disk, and the lane shows `refused`.
+
+## Design notes
+
+- **Why `S17_GATEWAY_PROVIDER` for pinning, not `config/tiers.yaml`'s budgeted path.**
+  `tiers.yaml` lets a budgeted run's own per-tier `provider` field silently override
+  `S17_GATEWAY_PROVIDER`, which would break provider pinning outright. Model Arena runs
+  unbudgeted on purpose — confirmed by reading `s17code/gateway.py` and `runtime.py` directly
+  — so every call in a lane goes through the one `llm` callable, and `S17_GATEWAY_PROVIDER`
+  genuinely governs all of it.
+- **Why the browser never talks to a lane directly.** `arena/server.py` proxies every SSE
+  stream, diff, and graph view. This is what makes CORS a non-issue and keeps
+  `S17_CONTROL_TOKEN` server-side only, matching the assignment's own explicit warning: read
+  endpoints are open by design, but the route that starts work fails closed without a token.
+- **Five lane states, not four.** `running/passed/refused/thrashing` are all derivable from
+  the AG-UI event stream's own vocabulary — but none of them fit a genuine provider/infra
+  failure (a rate limit, a decommissioned model, a network error), and with 5 real providers
+  behind this, that happened repeatedly during development, not hypothetically. `errored` is a
+  fifth state, set by the Arena backend itself (not the harness) on a failed start request, an
+  SSE stream that can't reconnect, or a 10-minute watchdog with no completion.
+- **Cost is a disclosed lower bound, not total run spend.** The gateway's own `/v1/chat`
+  response already carries a computed `cost` object; `s17code/gateway.py` now captures it
+  (same additive pattern as the reasoning-text field PR#17 restores). But only calls whose
+  result flows through a graph node are covered — the planner's own per-turn decision calls
+  aren't attributed to any node in the unbudgeted path, so the scoreboard's dollar figure is a
+  real, gateway-computed number that understates the true total. Extending that into
+  `planner.py`'s core loop was judged out of proportion for a demo feature; verified instead by
+  hand-checking two providers' actual reported costs against their published $/Mtok rates —
+  both reconciled exactly.
+- **Two already-claimed harness bugs, applied locally, not filed.** Building this surfaced two
+  real defects blocking a clean demo run: `run_command_worker` returned a raw `CommandResult`
+  object instead of a dict, so no `run_command` call — including a passing test — could ever
+  report cleanly (crashes inside the idempotency outbox's own durability write, caught and
+  reported as an ordinary `task_failed`); and on Windows, `run_command`'s subprocess
+  environment dropped `SYSTEMROOT`, breaking anything that imports `asyncio` (pytest's own
+  plugin loader does) with `WinError 10106`. Both were independently found while building this
+  product, then confirmed already filed upstream (PR#10/PR#2, and PR#3, respectively) before
+  touching anything — applied locally with their own failing-test-first proof so the demo could
+  run at all, not resubmitted as new PRs.
+
+## Transparency statement
+
+*[Fill in after your own review — see the checklist below. Draft: this product's
+architecture, backend, frontend, and the two harness fixes above were written by Claude Code
+across an extended session, working from a plan (`htmlcov/S17-Part1-Plan.md`) the user had
+already produced in an earlier session. Every design decision the agent made autonomously
+during implementation — the 5-state classification, the proxy-everything architecture, the
+cost-accounting scope decision, applying-not-filing the two already-claimed bugs — is
+documented above and was reviewed, questioned, and in at least one case corrected by the user
+before being accepted; nothing here is presented as validated beyond what was actually
+checked.]*
+
+---
+
 # S17Code — a general live-graph agent
 
 S17Code takes S15's durable graph, memory, A2A, UI, budget controller and
