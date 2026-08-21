@@ -20,3 +20,10 @@ proofs/out/
 # does not swallow proofs/runs/, which is evidence rather than scratch.
 /.s17/
 /runs/
+
+# Model Arena: per-lane runtime state, never shared workspace content.
+/arena/data/
+/arena/sandbox/
+/arena/*.local.env
+# Contains S17_CONTROL_TOKEN -- a real (if locally-scoped) secret.
+/arena/env/
