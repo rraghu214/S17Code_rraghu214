@@ -95,6 +95,11 @@ class GatewayClient:
             "latency_ms": body.get("latency_ms"),
             "stop_reason": body.get("stop_reason"),
             "reasoning_text": body.get("reasoning_text"),
+            # The gateway already prices every call against its own pricing
+            # table (glc/economics), independent of whether this run is
+            # budgeted here. Capturing it costs nothing further -- same
+            # additive pattern as reasoning_text above.
+            "cost_usd": (body.get("cost") or {}).get("total_usd"),
         }
 
     async def complete(
@@ -112,6 +117,7 @@ class GatewayClient:
             "text": result["text"], "provider": result["provider"], "model": result["model"],
             "input_tokens": result["input_tokens"], "output_tokens": result["output_tokens"],
             "reasoning_text": result.get("reasoning_text"),
+            "cost_usd": result.get("cost_usd"),
         }
 
     async def health(self) -> dict[str, Any]:
