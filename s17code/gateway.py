@@ -43,6 +43,12 @@ class GatewayClient:
             # gateway's own provider order (which may put a heavy model first).
             "provider": os.getenv("S17_GATEWAY_PROVIDER", "gemini"),
         }
+        # Optional: pin a specific model on that provider too. Without this a
+        # provider's own default-model selection applies, which can silently
+        # point at a model the provider has since decommissioned server-side.
+        model = os.getenv("S17_GATEWAY_MODEL", "").strip()
+        if model:
+            payload["model"] = model
         for field, value in (request or {}).items():
             if field in self.PASSTHROUGH:
                 payload[field] = value
