@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Model Arena</title>
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">&#9654;</span>
+    <span class="brand-name">MODEL ARENA</span>
+  </div>
+  <div class="topbar-actions">
+    <span id="viewSwitchWrap" class="view-switch hidden">
+      <button class="tab-btn" data-view="race">Race</button>
+      <button class="tab-btn" data-view="diff">Compare edits</button>
+    </span>
+    <button id="resetBtn" class="ghost-btn" title="Restore every lane's workspace to the seeded bug">Reset workspaces</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ START SCREEN ============ -->
+  <section id="startScreen" class="screen">
+    <div class="start-card">
+      <h1>Fire one prompt. Watch three models fix it.</h1>
+      <p class="lede">Each lane below is a separately-pinned coding agent, same task, same judge (pytest),
+        different provider. Nothing is editable per-run except the prompt &mdash; each lane's workspace and
+        provider are fixed at process launch, on purpose.</p>
+
+      <label for="promptInput">Task</label>
+      <textarea id="promptInput" rows="4" placeholder="e.g. Fix mathkit/stats.py so average([]) raises a ValueError instead of ZeroDivisionError. Make tests/test_stats.py pass without editing it.">Fix mathkit/stats.py so average([]) raises a ValueError instead of ZeroDivisionError. Make tests/test_stats.py pass without editing it.</textarea>
+
+      <div id="lanesConfig" class="lanes-config"></div>
+
+      <div class="start-actions">
+        <button id="startBtn" class="primary-btn">Start race</button>
+        <span id="startStatus" class="start-status"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RACE / SCOREBOARD VIEW ============ -->
+  <section id="raceScreen" class="screen hidden">
+    <div class="race-header">
+      <div class="race-prompt" id="racePromptText"></div>
+      <button id="newRaceBtn" class="ghost-btn">New race</button>
+    </div>
+    <div id="raceLanes" class="lanes-grid"></div>
+  </section>
+
+  <!-- ============ COMPARE-EDITS VIEW ============ -->
+  <section id="diffScreen" class="screen hidden">
+    <div id="diffLanes" class="lanes-grid"></div>
+  </section>
+
+</main>
+
+<!-- ============ GRAPH DETAIL MODAL ============ -->
+<div id="graphModal" class="modal hidden">
+  <div class="modal-card modal-wide">
+    <div class="modal-head">
+      <h2 id="graphModalTitle">Lane graph</h2>
+      <button class="modal-close" data-close="graphModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <svg id="graphSvg" class="graph-svg"></svg>
+    </div>
+  </div>
+</div>
+
+<!-- ============ THINKING PANEL MODAL ============ -->
+<div id="thinkModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="thinkModalTitle">Step detail</h2>
+      <button class="modal-close" data-close="thinkModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="think-block">
+        <h3>Step</h3>
+        <div id="thinkStepName" class="think-mono"></div>
+      </div>
+      <div class="think-block">
+        <h3>Reasoning</h3>
+        <div id="thinkReasoning" class="think-mono think-reasoning"></div>
+      </div>
+      <div class="think-block">
+        <h3>Raw event</h3>
+        <pre id="thinkRaw" class="think-raw"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

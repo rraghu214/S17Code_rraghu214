@@ -1,0 +1,25 @@
+{
+  "lanes": [
+    {
+      "name": "groq",
+      "label": "Groq",
+      "port": 8113,
+      "provider": "groq",
+      "workspace": "../../arena-worktrees/groq"
+    },
+    {
+      "name": "gemini",
+      "label": "Gemini",
+      "port": 8114,
+      "provider": "gemini",
+      "workspace": "../../arena-worktrees/gemini"
+    },
+    {
+      "name": "nvidia",
+      "label": "NVIDIA",
+      "port": 8115,
+      "provider": "nvidia",
+      "workspace": "../../arena-worktrees/nvidia"
+    }
+  ]
+}
