@@ -25,5 +25,7 @@ proofs/out/
 /arena/data/
 /arena/sandbox/
 /arena/*.local.env
-# Contains S17_CONTROL_TOKEN -- a real (if locally-scoped) secret.
-/arena/env/
+# Contains S17_CONTROL_TOKEN -- a real (if locally-scoped) secret. The
+# *.env.example templates stay tracked so a clone is reproducible.
+/arena/env/*
+!/arena/env/*.env.example
