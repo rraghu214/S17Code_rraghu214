@@ -35,6 +35,11 @@ class ScopeBody(BaseModel):
 
 class RunBody(ScopeBody):
     prompt: str = Field(min_length=1, max_length=40_000)
+    # Optional caller-supplied id for a NEW run. runtime.run() already accepts
+    # one (used today only by the resume path) -- exposing it lets a caller
+    # know the run_id before the run finishes, so it can open the SSE events
+    # stream immediately instead of only after this blocking call returns.
+    run_id: str | None = Field(default=None, min_length=1, max_length=128)
     # How the run should answer: a plain text answer ("text", the default) or a
     # composed, validated A2UI interface ("ui"). Additive and domain-agnostic.
     respond_as: str = Field(default="text", pattern="^(text|ui)$")
@@ -187,7 +192,7 @@ async def _resume_channel_approval(request: Request, body: ChannelMessageBody):
 async def run(body: RunBody, request: Request):
     runtime = request.app.state.runtime
     try:
-        return await runtime.run(prompt=body.prompt, scope=body.scope(),
+        return await runtime.run(prompt=body.prompt, scope=body.scope(), run_id=body.run_id,
                                  llm=lambda prompt, system: gateway_text_llm(request.app, prompt, system),
                                  source_uri="api://agent/runs", source_author=body.user_id or "api-user",
                                  respond_as=body.respond_as, budget=body.budget, principal=body.principal,

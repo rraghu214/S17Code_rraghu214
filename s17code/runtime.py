@@ -333,7 +333,7 @@ class AgentRuntime:
                 Principal("gateway", "gateway"), metadata={"run_id": run_id, "provider": result.get("provider")},
             ))
             return {"answer": text, "provider": result.get("provider"), "model": result.get("model"),
-                    "evidence_count": len(evidence)}
+                    "evidence_count": len(evidence), "reasoning_text": result.get("reasoning_text")}
 
 
 
