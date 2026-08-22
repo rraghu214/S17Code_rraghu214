@@ -172,17 +172,91 @@ etc.) — the guard refuses before the edit ever reaches disk, and the lane show
   touching anything — applied locally with their own failing-test-first proof so the demo could
   run at all, not resubmitted as new PRs.
 
+## Observations from a full day of live testing
+
+Everything below was measured against real, running processes and real provider accounts —
+none of it is projected or assumed. Kept here because it's more useful to a reader than
+pretending the final config was the first thing that worked.
+
+**Two more real harness bugs, found building this, already claimed by other students:**
+- `run_command_worker` (`s17code/workers/coding.py`) returned the raw `CommandResult`
+  dataclass instead of calling its own `.as_dict()`. Every `run_command` call — including a
+  passing test run — crashed trying to persist that result, surfacing as an ordinary
+  `task_failed` event indistinguishable from a genuine test failure. Root-caused all the way
+  to `events/outbox.py`'s durability write. Already filed upstream as PR#10 and PR#2; applied
+  locally only, with its own failing-test-first proof, so this demo's judge could actually
+  report a result.
+- `run_command`'s subprocess environment dropped `SYSTEMROOT` on Windows, so anything
+  importing `asyncio` (pytest's own plugin loader does) crashed with `WinError 10106`. Already
+  filed upstream as PR#3; applied locally only, same reasoning.
+
+**Provider/model reliability, tested exhaustively, not assumed:**
+- Groq's default model (`openai/gpt-oss-120b`) has an 8K tokens-per-minute free-tier cap,
+  confirmed live via a real `429` — easily exhausted by a coding agent's large prompts. Every
+  other plain model on the account shares that same cap. `groq/compound-mini` has its own
+  much larger pool and isn't actually billed on the free tier, but it's an *agentic* system,
+  and on the real planner prompt it internally delegated to sub-models the account couldn't
+  reach — reverted in favor of the plain, rate-limited-but-predictable model.
+- Gemini's newest model (`gemini-3.7-flash`) hung for 2+ minutes under real demand pressure;
+  `gemini-3.1-flash-lite` was reliably fast and correct instead.
+- NVIDIA's configured default model had been decommissioned server-side. Nine NVIDIA-hosted
+  models were tested; most were 404, decommissioned, or never responded at all.
+  `nvidia/nemotron-3-super-120b-a12b` was the most reliable found, though even it produced
+  malformed planner JSON in one real race — free-tier model reliability is genuinely
+  inconsistent, not a solved problem.
+- Local Ollama models were tested as a rate-limit-free alternative: all four pulled models
+  worked correctly but took 13–34 seconds for a two-word reply, which would make a single
+  race take minutes rather than seconds — reliable but impractical for a live demo on this
+  hardware.
+- Cerebras returned `402 Payment Required` — free credits exhausted, not usable without
+  billing.
+- OpenRouter's free-tier models sit behind a shared capacity pool across *all* their users
+  globally — hit a real `429` from that shared pool within two calls, ruling it out as a fix
+  for Groq's rate limit.
+
+**Two Arena-specific bugs found live, by actually using the running app:**
+- Browsers auto-reconnect `EventSource` connections on any stream close, including ones the
+  backend intended as final — a lane that errored or finished replayed its terminal event
+  forever, flooding the log. Fixed on both sides: the frontend now closes its own connection
+  on a terminal event; the backend short-circuits a stray reconnect instead of re-streaming a
+  finished lane's full history.
+- There was no way to stop watching a stuck lane. Added a per-lane abort control, with an
+  honest disclosure that it reliably stops the *UI* from waiting, but can't guarantee killing
+  an in-flight provider call already running on the lane's own server, since the harness has
+  no cancellation endpoint.
+
+**A genuine thrashing case, root-caused to the actual bytes, not guessed at:** one race showed
+a lane thrash through 4 failed verifications and stop itself. Pulling the model's own raw
+`edit_code` arguments from the run journal showed it submitted syntactically invalid Python —
+wrong indentation on the first attempt, a literal two-character `\n` instead of a real newline
+on the second. The harness's own repeat-failure guard caught it correctly, exactly as
+designed.
+
 ## Transparency statement
 
-*[Fill in after your own review — see the checklist below. Draft: this product's
-architecture, backend, frontend, and the two harness fixes above were written by Claude Code
-across an extended session, working from a plan (`htmlcov/S17-Part1-Plan.md`) the user had
-already produced in an earlier session. Every design decision the agent made autonomously
-during implementation — the 5-state classification, the proxy-everything architecture, the
-cost-accounting scope decision, applying-not-filing the two already-claimed bugs — is
-documented above and was reviewed, questioned, and in at least one case corrected by the user
-before being accepted; nothing here is presented as validated beyond what was actually
-checked.]*
+- The idea came from brainstorming with ChatGPT, Gemini, and Claude — around 20 candidate
+  product ideas were reviewed in depth, each weighed against several criteria (real problem,
+  hard to clone, buildable reliably on the harness available), before Model Arena was chosen.
+  That reasoning trail is preserved in `docs/S17-Part1-Plan.md`.
+- The architecture, the Arena backend and frontend, the two harness fixes documented above,
+  and every provider/model reliability test in this README were built and run by Claude Code
+  across an extended session.
+- I did not accept its output passively. I reviewed the implementation as it was built,
+  questioned specific design decisions back to it, and required it to justify or change
+  choices before I accepted them — including catching it giving me an incorrect explanation
+  of exactly where one of the two harness bugs actually crashed, and making it re-verify with
+  a live repro before I accepted the fix.
+- I verified the actual running behavior myself, manually — starting every lane and the
+  gateway in my own terminals, watching real races, reporting back what I actually saw
+  (including bugs it hadn't caught, like the log-spam issue and the abort gap), and directing
+  the troubleshooting priorities in real time rather than accepting the first proposed fix.
+- Judgment calls that were mine, not the agent's, by explicit decision: which already-claimed
+  harness bugs to fix locally versus leave alone, ruling out paid models even when a paid
+  option would have been more reliable, which working documents to publish alongside the
+  code, and the final scope cuts (e.g., not pursuing a bigger architecture change to make
+  provider selection dynamic, once a simpler fix was found).
+- The two required Part 2 bug-fix PRs (`S17Code` #6 and #17, `glc_v5` #29 and #30) were
+  investigated and filed in an earlier session, separate from the one that built this product.
 
 ---
 
