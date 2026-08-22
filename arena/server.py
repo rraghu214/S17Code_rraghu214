@@ -53,12 +53,13 @@ class LaneState:
     def __init__(self, name: str, run_id: str) -> None:
         self.name = name
         self.run_id = run_id
-        self.status = "starting"  # starting|running|passed|refused|thrashing|errored
+        self.status = "starting"  # starting|running|passed|refused|thrashing|errored|aborted
         self.error: str | None = None
         self.cost_usd = 0.0
         self.step_count = 0
         self.started_at = time.monotonic()
         self.reasoning_by_step: dict[str, str | None] = {}
+        self.start_task: asyncio.Task | None = None
 
 
 class Race:
@@ -150,8 +151,19 @@ async def _lane_event_stream(race: Race, lane_state: LaneState):
     lane = LANE_BY_NAME[lane_state.name]
     deadline = time.monotonic() + WATCHDOG_SECONDS
 
+    # A lane already at a terminal status means some earlier connection to this
+    # same endpoint already ran this race to completion -- a stray reconnect
+    # (page refresh, a client that ignored the terminal-event close) must not
+    # re-open the lane's own /events stream, which would replay its full
+    # history from the start. Emit one RUN_FINISHED-shaped notice and stop.
+    if lane_state.status in {"passed", "refused", "thrashing"}:
+        yield _sse(_wrap(race, lane_state, {"type": "RUN_FINISHED", "seq": -1, "source_kind": "derived"}))
+        return
     if lane_state.status == "errored":
         yield _sse(_wrap(race, lane_state, {"type": "ARENA_ERROR", "reason": lane_state.error}))
+        return
+    if lane_state.status == "aborted":
+        yield _sse(_wrap(race, lane_state, {"type": "ARENA_ABORTED", "reason": lane_state.error}))
         return
 
     lane_state.status = "running"
@@ -171,6 +183,9 @@ async def _lane_event_stream(race: Race, lane_state: LaneState):
                         )
                     buffer = ""
                     async for line in response.aiter_lines():
+                        if lane_state.status == "aborted":
+                            yield _sse(_wrap(race, lane_state, {"type": "ARENA_ABORTED", "reason": lane_state.error}))
+                            return
                         if time.monotonic() > deadline:
                             lane_state.status = "errored"
                             lane_state.error = f"watchdog: no completion within {WATCHDOG_SECONDS}s"
@@ -247,11 +262,36 @@ async def start_race(body: StartBody) -> dict[str, Any]:
         run_id = f"arena-{lane['name']}-{uuid.uuid4().hex[:8]}"
         lane_state = LaneState(lane["name"], run_id)
         race.lanes[lane["name"]] = lane_state
-        asyncio.create_task(_start_lane(race, lane, lane_state))
+        lane_state.start_task = asyncio.create_task(_start_lane(race, lane, lane_state))
         lanes_out.append({"name": lane["name"], "label": lane["label"], "provider": lane["provider"],
                            "run_id": run_id})
     RACES[race_id] = race
     return {"race_id": race_id, "prompt": body.prompt, "lanes": lanes_out}
+
+
+@app.post("/api/race/{race_id}/lanes/{lane_name}/abort")
+async def abort_lane(race_id: str, lane_name: str) -> dict[str, Any]:
+    """Stop the Arena UI waiting on this lane.
+
+    Honest limitation, disclosed rather than hidden: POST /v1/agent/runs on the
+    lane itself blocks server-side until the whole run finishes, and S17Code
+    has no cancellation endpoint. Aborting here reliably stops OUR proxy (the
+    SSE stream this endpoint's sibling serves closes immediately, and our own
+    background start-task is cancelled if it hasn't returned yet) -- but if
+    the lane's own process is mid-way through an in-flight provider call, that
+    call may keep running to completion on the lane's side regardless.
+    """
+    race = RACES.get(race_id)
+    if race is None:
+        raise HTTPException(404, "race not found")
+    lane_state = race.lanes.get(lane_name)
+    if lane_state is None:
+        raise HTTPException(404, "lane not found")
+    if lane_state.start_task is not None and not lane_state.start_task.done():
+        lane_state.start_task.cancel()
+    lane_state.status = "aborted"
+    lane_state.error = "aborted by user"
+    return {"ok": True, "status": lane_state.status}
 
 
 @app.get("/api/race/{race_id}/lanes/{lane_name}/events")

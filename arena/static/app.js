@@ -139,6 +139,7 @@ function buildLaneCard(lane) {
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <button class="lane-graph-btn" data-lane="${lane.name}">graph</button>
+        <button class="lane-abort-btn" data-lane="${lane.name}" title="Stop watching this lane -- may not stop an in-flight provider call on its own server">abort</button>
         <span class="badge badge-starting" data-role="badge">starting</span>
       </div>
     </div>
@@ -149,17 +150,46 @@ function buildLaneCard(lane) {
     </div>
     <div class="lane-log" data-role="log"></div>`;
   card.querySelector(".lane-graph-btn").addEventListener("click", () => openGraphModal(lane.name, lane.label));
+  card.querySelector(".lane-abort-btn").addEventListener("click", () => abortLane(lane.name));
   return card;
+}
+
+const TERMINAL_EVENT_TYPES = new Set(["RUN_FINISHED", "ARENA_ERROR", "ARENA_ABORTED"]);
+
+async function abortLane(laneName) {
+  const es = state.sources[laneName];
+  if (es) es.close();
+  const rt = state.laneRuntime[laneName];
+  if (rt) {
+    rt.status = "aborted";
+    updateLaneCard(laneName, rt, { type: "ARENA_ABORTED", reason: "aborted by user", seq: "" });
+  }
+  try {
+    await fetch(`/api/race/${state.raceId}/lanes/${laneName}/abort`, { method: "POST" });
+  } catch {
+    // Local UI already reflects the abort regardless of whether this call lands.
+  }
 }
 
 function openLaneStream(lane) {
   const es = new EventSource(`/api/race/${state.raceId}/lanes/${lane.name}/events`);
   state.sources[lane.name] = es;
-  es.onmessage = (ev) => handleLaneEvent(lane.name, JSON.parse(ev.data));
+  es.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    handleLaneEvent(lane.name, msg);
+    // EventSource auto-reconnects on ANY stream close, including a clean one
+    // the backend intended as final -- without this, a finished/errored lane
+    // reopens the connection forever, each cycle re-emitting one more
+    // terminal event and appending one more log line.
+    if (TERMINAL_EVENT_TYPES.has(msg.raw && msg.raw.type)) {
+      es.close();
+    }
+  };
   es.onerror = () => {
-    // The backend's own watchdog/reconnect logic marks the lane errored and
-    // sends a terminal ARENA_ERROR event before closing; the browser-side
-    // EventSource retrying past that point would just spin on a closed race.
+    // A genuine network-level drop (not a clean server close) surfaces here.
+    // Nothing to do -- the backend's own watchdog will eventually emit
+    // ARENA_ERROR on its side if the lane truly went dark; EventSource's
+    // built-in retry covers a transient blip on its own.
   };
 }
 
@@ -223,6 +253,8 @@ function renderLogLine(raw) {
     text = "race finished"; kind = "run";
   } else if (type === "ARENA_ERROR") {
     text = `⚠ ${raw.reason || "lane error"}`; kind = "error";
+  } else if (type === "ARENA_ABORTED") {
+    text = `■ ${raw.reason || "aborted"}`; kind = "error";
   } else if (type === "CUSTOM") {
     text = raw.custom || "event"; kind = "custom";
   } else {

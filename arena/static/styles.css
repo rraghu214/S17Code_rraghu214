@@ -105,9 +105,10 @@ main { max-width: 1400px; margin: 0 auto; padding: 28px; }
 .lane-title { display: flex; align-items: center; gap: 10px; }
 .lane-provider { font-weight: 700; font-size: 14px; }
 .lane-model { font-size: 11px; color: var(--text-dim); }
-.lane-graph-btn { background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+.lane-graph-btn, .lane-abort-btn { background: transparent; border: 1px solid var(--border); color: var(--text-dim);
   font-size: 11px; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
 .lane-graph-btn:hover { color: var(--text); border-color: var(--accent-2); }
+.lane-abort-btn:hover { color: var(--errored); border-color: var(--errored); }
 
 .badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; text-transform: uppercase;
   letter-spacing: 0.04em; }
@@ -117,6 +118,7 @@ main { max-width: 1400px; margin: 0 auto; padding: 28px; }
 .badge-refused { background: rgba(185,139,245,0.16); color: var(--refused); }
 .badge-thrashing { background: rgba(245,185,66,0.16); color: var(--thrashing); }
 .badge-errored { background: rgba(241,109,109,0.16); color: var(--errored); }
+.badge-aborted { background: rgba(139,144,163,0.18); color: var(--text-dim); }
 
 .lane-stats { display: flex; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--border);
   font-size: 12px; color: var(--text-dim); }
