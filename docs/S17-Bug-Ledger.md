@@ -157,12 +157,13 @@ itemised list below rather than carried forward.**
 
 | | Count |
 |---|---|
-| Total findings | 21 (S1–S13, G1–G8; the Cerebras healing gap is logged but not yet numbered) |
+| Total findings | 23 (S1–S15, G1–G8; the Cerebras healing gap is logged but not yet numbered) |
 | **Lost to an upstream PR** | 3 (S1, S5, S13) |
 | **Fixed upstream via official backport, not filed** | 1 (G5) |
 | Filed | 6 (S11, S12, G2, G8, S2, G1) |
+| **Already claimed, applied locally only, not filed** | 2 (S14, S15 — found via a different investigation, see below) |
 | Deferred, not filed | 1 (G3) |
-| Remaining, unclaimed, not yet filed | **10** (S3, S4, S6, S7, S8, S9, S10, G4, G6, G7) |
+| Remaining, unclaimed, not yet filed | **10** (S3, S4, S6, S7, S8, S9, S10, G4, G6, G7 — 5 of these now contested by file overlap with newer PRs, see the 2026-08-22 re-check above) |
 
 **Filing order — done: S11+S12 → PR#6, G2 → PR#29, G8 → PR#30, S2 → PR#17, G1 → PR#33.** All
 five confirmed-and-scoped candidates from the original plan are now filed. The 10 remaining
@@ -176,6 +177,31 @@ step that would have caught S13 being already fixed before it was lost to PR#15.
 > immediately before opening anything, every time — not just once per session — and re-check
 > `main` for unrelated upstream movement in the same files before trusting an old "unclaimed"
 > read.
+
+**Re-checked 2026-08-22, via `gh pr list --state all` against both repos (this was a
+file-overlap check only — confirms whether another PR touches the same file, not whether it
+fixes the same bug; a real filing attempt still needs each candidate PR's diff read before
+trusting "unclaimed").**
+
+Still genuinely untouched by any PR (`S17Code`): **S7**, **S8**, **S9** — all in
+`skills/generic.py`/`skills/manager.py`, zero overlap. Still genuinely untouched (`glc_v5`):
+**G4** (`glc/cache/semantic.py`) and **G6** (`glc/channels/catalogue/twilio_sms/webhook.py`).
+
+Now contested — another PR touches the same file, overlap unconfirmed, would need that PR's
+diff read before filing: **S3** (`s17code/capabilities.py`, PR#40), **S4**/**S6**
+(`s17code/reasoning/jitrl.py`, PR#38 and PR#14), **S10** (`s17code/runtime.py`, PR#40, #21,
+#20, #11), **G3** (`glc/providers.py`, now PR#44 and PR#38 on top of the already-known #28 —
+still deliberately deferred regardless), **G7** (`glc/policy/engine.py`, PR#26) — checked
+PR#26's actual diff specifically for this one, since a merged backport fixed G5 as a
+side-effect before: it does not touch encoding/locale reads anywhere, only the G5
+path-normalization fix in the same file. **G7 is confirmed still real and unfixed**, just
+carries file-overlap risk with #26 if filed.
+
+Two more findings, from a separate investigation (building Model Arena, Part 1 — not the
+original Part 2 hunt), added below as **S14** and **S15**. Both MEASURED, both confirmed
+already claimed upstream before anything was touched, both applied **locally only** —
+deliberately not filed as new PRs. See their entries under S17Code findings for the full
+trace.
 
 ---
 
@@ -360,7 +386,9 @@ body as a documented future opportunity (Tier C), not implemented.
 
 ## S3 — `a2a_delegate` is missing `side_effect=True` **REPORTED**
 
-**File:** `s17code/capabilities.py:447-450` · **Unclaimed**
+**File:** `s17code/capabilities.py:447-450` · **Contested as of 2026-08-22** — PR#40 also
+touches this file (unconfirmed whether it fixes this specific bug; read its diff before
+filing)
 
 A full registry audit found it is the **only** capability that causes work outside this
 process while declaring `side_effect=False`. The sibling `launch_job` (`:451-454`) does the
@@ -379,7 +407,9 @@ No test anywhere references `a2a_delegate`. **Test home:** `tests/test_capabilit
 
 ## S4 — the `_JSON` regex is greedy **REPORTED**
 
-**Files:** `reasoning/verifier.py:34`, `reasoning/jitrl.py:52` · **Unclaimed**
+**Files:** `reasoning/verifier.py:34`, `reasoning/jitrl.py:52` · **Contested as of 2026-08-22**
+— PR#38 and PR#14 also touch `jitrl.py` (unconfirmed whether either fixes this specific
+regex; read their diffs before filing)
 
 Both define `_JSON = re.compile(r"\{.*\}", re.S)`, which spans from the **first** `{` to the
 **last** `}` anywhere in the reply. A valid verdict of 92 followed by one closing sentence
@@ -431,7 +461,8 @@ request is deleted and the planner receives a confident, contentless goal — th
 
 ## S6 — the same guard fires backwards **REPORTED**
 
-**File:** `reasoning/jitrl.py:105` · **Unclaimed**
+**File:** `reasoning/jitrl.py:105` · **Contested as of 2026-08-22** — same PR#38/PR#14
+overlap as S4, same file (unconfirmed whether either fixes this specific bug)
 
 `literals()` strips quotes (`.strip("\"'")`), so `the "retry_after" field` yields
 `{'retry_after'}` — but a bare `retry_after` in the rewrite matches no alternative in
@@ -499,7 +530,9 @@ agent from starting."*
 
 ## S10 — `_skills()` is a class-level cache **REPORTED**
 
-**File:** `runtime.py:144`, `:153`, `:162` · **Unclaimed**
+**File:** `runtime.py:144`, `:153`, `:162` · **Contested as of 2026-08-22** — PR#40, #21, #20,
+and #11 all also touch `runtime.py` (unconfirmed whether any fixes this specific caching bug
+at these exact lines; read their diffs before filing)
 
 `_skill_manager` is a class attribute, and `S17_SKILLS_DIR` is read at `:155` **after** the
 cache check. Three consequences: two `AgentRuntime`s in one process with different skills
@@ -507,6 +540,105 @@ directories share the first tenant's skill bodies, which land in the second tena
 prompt; a `disable()` on one run persists into every later run forever; and with
 `S17_SKILLS_DIR` later unset, `_skills()` still returns a manager, so the
 `unavailable |= {"load_skill"}` mask at `:398` never fires.
+
+---
+
+## S14 — `run_command_worker` returns a raw dataclass, not a dict ✅ **MEASURED, ALREADY
+CLAIMED — applied locally only, not filed**
+
+**File:** `s17code/workers/coding.py:63-65` · **Claimed by upstream PR#10 and PR#2**
+
+Found independently while building Model Arena (Part 1), not during the original Part 2 hunt.
+
+```python
+async def run_command_worker(ctx: RunContext, task: TaskSpec) -> dict[str, Any]:
+    return run_command(ctx.workspace(), task.input["command"],
+                       timeout=int(task.input.get("timeout", 120)))
+```
+
+Type-hinted to return a `dict`, but `run_command()` (`coding/exec.py:59-76`) actually returns
+a `CommandResult` dataclass, and its own `.as_dict()` conversion method is simply never
+called. Every sibling worker in the same file already returns a plain dict from its
+underlying `coding/` call — this is the one outlier.
+
+**Full trace, MEASURED end to end, not just read:**
+1. `exec.py:143` — `run_command()` constructs and returns the raw `CommandResult`.
+2. `workers/coding.py:64` — returned unchanged.
+3. `run_command` has `side_effect=True` (`capabilities.py`), so it's wrapped by
+   `runtime.py`'s `idempotent()` → `execute_once()` → `events/outbox.py`'s
+   `ActionOutbox.execute()`.
+4. `outbox.py:71` — `result = await operation()` succeeds, holding the raw `CommandResult`.
+5. `outbox.py:77` — `self._write(key, {"status": "completed", "receipt":
+   self._encode(result)})` — `_encode()` (`:44-48`) just wraps it, still holding the raw
+   object.
+6. `outbox.py:35` (inside `_write`) — `json.dump(value, stream, ...)` **is where the crash
+   actually happens**, persisting the durability receipt.
+7. That raise is outside `outbox.py`'s own try/except (only wraps step 4, not step 5), so it
+   propagates uncaught up to `core/live_graph/core.py:194-195`'s `except Exception as exc:
+   return task, False, {"error": f"{type(exc).__name__}: {exc}"}` — which is what actually
+   catches it, converting a JSON-serialization crash into an ordinary-looking `task_failed`
+   event indistinguishable from a genuine test failure.
+
+Net effect: no `run_command` call — including a passing pytest run — can ever report cleanly
+through this checkout. Isolated repro, no live server needed:
+```python
+from s17code.coding.exec import run_command
+from s17code.coding.workspace import Workspace
+result = run_command(Workspace.open("some/git/repo"), ["python", "--version"])
+import json; json.dumps(result)  # TypeError: Object of type CommandResult is not JSON serializable
+```
+**Fix:** append `.as_dict()` to the `run_command(...)` call in `run_command_worker`. One
+line. **Already filed upstream** as PR#10 ("run_command could not report its verdict") and
+PR#2 ("Return run_command's result as a dict, and count a verification that could not run" —
+broader, also touches `planner.py`). Confirmed via `gh pr list` before touching anything —
+not resubmitted. Applied locally on the `part1-model-arena` branch only, with its own
+failing-test-first proof (`tests/test_run_command_worker_serializable.py`), so Model Arena's
+own demo could show a genuine judge verdict. **Test home if ever filed:**
+`tests/test_run_command_worker_result.py` or similar, matching PR#10's naming.
+
+---
+
+## S15 — `run_command`'s subprocess environment drops `SYSTEMROOT` on Windows ✅ **MEASURED,
+ALREADY CLAIMED — applied locally only, not filed**
+
+**File:** `s17code/coding/exec.py:140-141` · **Claimed by upstream PR#3**
+
+Found in the same session as S14, immediately after fixing it — the very next real
+`run_command` call on this machine hit this one live.
+
+```python
+env={"PATH": os.environ.get("PATH", ""), "HOME": str(workspace.root),
+     "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1"},
+```
+
+`subprocess.run(..., env=...)` fully replaces the environment with exactly these 4 keys —
+deliberate, for sandboxing, but on Windows it drops `SYSTEMROOT`, which `asyncio.
+windows_events` needs to locate the Winsock service provider when it imports `_overlapped`.
+Any command that imports `asyncio` — `pytest`'s own plugin autoload does — crashes with
+`OSError: [WinError 10106] The requested service provider could not be loaded or
+initialized`, indistinguishable from a real test failure to anything reading only
+`exit_code`.
+
+**MEASURED, isolated, deterministic:**
+```python
+from s17code.coding.exec import run_command
+from s17code.coding.workspace import Workspace
+ws = Workspace.open("some/git/repo")
+(ws.root / "probe.py").write_text("import asyncio.windows_events\nprint('ok')\n")
+run_command(ws, ["python", "probe.py"])  # exit_code=1, WinError 10106, on a clean checkout
+```
+Confirmed the fix in isolation too: adding only `"SYSTEMROOT": os.environ.get("SYSTEMROOT",
+"")` to the same dict resolves it completely — a real `subprocess.run` with that one extra
+key succeeds where the identical call without it doesn't.
+
+**Fix:** add `"SYSTEMROOT": os.environ.get("SYSTEMROOT", "")` to the same `env` dict — a
+no-op empty string on non-Windows. **Already filed upstream** as PR#3 ("Give the sandbox
+enough environment for the interpreter to start on Windows"). Confirmed via `gh pr list`
+before touching anything — not resubmitted. Applied locally on the `part1-model-arena`
+branch only, with its own failing-test-first proof
+(`tests/test_run_command_windows_systemroot.py`) — without it, Model Arena's demo could
+never show a real `pytest` run completing on this machine. **Test home if ever filed:**
+likely `tests/test_exec_environment.py`, matching PR#3's probable naming.
 
 ---
 
@@ -596,7 +728,9 @@ hand-rolled-fake-`httpx.AsyncClient` convention already used in
 ## G3 — the default path never disables thinking for OpenAI-compat either ⚪ **CONFIRMED
 REAL, DEFERRED — not filed**
 
-**File:** `glc/providers.py:424` · **Unclaimed**
+**File:** `glc/providers.py:424` · **Deliberately deferred (see below), now also more
+contested as of 2026-08-22** — PR#44 and PR#38 touch this file too, on top of the
+already-known PR#28 (corroborating, different provider class)
 
 ```python
 if not reasoning:
@@ -771,7 +905,11 @@ a fail-open one on a channel where `From` drives trust level.
 ## G7 — YAML and SQL read with the locale codec, not UTF-8 **REPORTED**
 
 **Files:** `glc/policy/engine.py:93`, `glc/routes/chat.py:71`, `glc/audit/store.py:48`
-· **Unclaimed**
+· **Contested as of 2026-08-22** — PR#26 (merged) and PR#37 (open) also touch
+`glc/policy/engine.py`. Checked PR#26's actual diff specifically, since a merged backport
+fixed G5 as a side-effect before: it adds `_normalize_path_for_glob` (the G5 fix) but touches
+no encoding/locale read anywhere — **this finding is confirmed still real and unfixed**,
+it just shares a file with PR#26 and PR#37, so a filing needs to diff cleanly against both.
 
 None passes `encoding=`. Confirmed on this machine (`locale.getpreferredencoding(False)` =
 `cp1252`): `glc/routing/routing.yaml` (1659 non-ASCII bytes) **parses to different data**
