@@ -61,14 +61,11 @@ git clone <this repo> S17Code && cd S17Code
 git checkout part1-model-arena
 uv sync
 
-# A small seeded-bug workspace, sibling to this repo, cloned/worktreed 3× —
-# one per lane, so each agent edits its own isolated checkout.
-cd ..
-git clone <arena-target repo> arena-target && cd arena-target
-git worktree add -b lane/groq   ../arena-worktrees/groq   main
-git worktree add -b lane/gemini ../arena-worktrees/gemini main
-git worktree add -b lane/nvidia ../arena-worktrees/nvidia main
-cd ../S17Code
+# Seeds a small demo repo (arena-target, sibling to this one) with two
+# deliberate bugs, then a git worktree per lane -- one per provider, so each
+# agent edits its own isolated checkout without racing on the same files.
+# Self-contained: no second repo to find or clone.
+uv run python arena/seed_target.py
 
 # Generate one shared token every lane + the backend must agree on:
 python -c "import secrets; print(secrets.token_urlsafe(32))"
