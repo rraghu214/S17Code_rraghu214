@@ -20,7 +20,7 @@ selection in general.
 
 ## Demo
 
-**[YouTube link — fill in after recording]**
+**[Model Arena — live demo](https://youtu.be/Gpul2tY4A_Q)**
 
 ## Architecture
 
